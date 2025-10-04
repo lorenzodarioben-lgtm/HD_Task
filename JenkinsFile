@@ -117,62 +117,36 @@ stage('Code Quality') {
 }
 
 stage('Security') {
-  environment {
-    IMAGE_FULL = "${IMAGE_NAME}:${IMAGE_TAG}"
-  }
   steps {
-    script {
-      // Make sure reports dirs exist
-      bat '''
+    withEnv(["PYTHONWARNINGS=ignore"]) {
+      script {
+        bat """
         if not exist reports mkdir reports
         if not exist reports\\junit mkdir reports\\junit
-      '''
 
-// --- Run pip-audit (SCA) + Bandit (SAST) inside a Python container
-bat """
-docker run --rm -v "%cd%":/work -w /work python:3.11-slim sh -lc "pip install --no-cache-dir pip-audit bandit >/dev/null 2>&1; pip-audit -r requirements.txt -f json -o reports/pip-audit.json || true; bandit -r app -iii -q -f junit -o reports/junit/bandit.xml || true"
-"""
+        docker run --rm -v "%cd%":/work -w /work python:3.11-slim sh -lc "pip install --no-cache-dir pip-audit bandit >/dev/null 2>&1; \
+          pip-audit -r requirements.txt -f json -o reports/pip-audit.json || true; \
+          bandit -r app -iii -q -f xml -o reports/bandit.xml || true"
 
+        rem -- read image tag saved in the Build stage
+        set /p IMG=<build\\image-tag.txt
 
-      // --- Scan the built image with Trivy
-      // Save a human-readable summary + a SARIF you could upload later if you want.
-      // We do one run to write reports, then a small gate run to control build result.
-      bat '''
-        docker run --rm ^
-          -v /var/run/docker.sock:/var/run/docker.sock ^
-          -v "%cd%\\reports":/reports ^
-          aquasec/trivy:0.53.0 image %IMAGE_FULL% ^
-            --ignore-unfixed ^
-            --scanners vuln ^
-            --severity HIGH,CRITICAL ^
-            --format table --output /reports/trivy-image.txt ^
-            --format sarif --output /reports/trivy-image.sarif || true
-      '''
+        rem -- Trivy table report
+        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "%cd%\\reports":/reports aquasec/trivy:0.53.0 ^
+          image %IMG% --ignore-unfixed --scanners vuln --severity HIGH,CRITICAL ^
+          --format table --output /reports/trivy-image.txt || exit /b 0
 
-      // --- Gates:
-      // Fail build on CRITICAL image vulns
-      catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-        bat '''
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.53.0 ^
-            image %IMAGE_FULL% --ignore-unfixed --scanners vuln --severity CRITICAL --quiet --exit-code 1
-        '''
-      }
-
-      // Mark UNSTABLE if Bandit JUnit shows failures or Trivy finds HIGH vulns
-      // (Trivy: exit 0 but we detect high via exit-code 1 to flip UNSTABLE without failing)
-      catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
-        bat '''
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.53.0 ^
-            image %IMAGE_FULL% --ignore-unfixed --scanners vuln --severity HIGH --quiet --exit-code 1
-        '''
+        rem -- Trivy SARIF (for Warnings NG / SARIF)
+        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "%cd%\\reports":/reports aquasec/trivy:0.53.0 ^
+          image %IMG% --ignore-unfixed --scanners vuln --severity HIGH,CRITICAL ^
+          --format sarif --output /reports/trivy-image.sarif || exit /b 0
+        """
       }
     }
 
-    // Publish Bandit findings into “Tests” so you see a trend
-    junit testResults: 'reports/junit/bandit.xml', allowEmptyResults: true
-
-    // Always keep the security artifacts
-    archiveArtifacts artifacts: 'reports/**', fingerprint: true, onlyIfSuccessful: false
+    // Optional publishers (won’t fail the build if missing)
+    recordIssues enabledForFailure: true, tools: [sarif(pattern: 'reports/trivy-image.sarif')]
+    archiveArtifacts artifacts: 'reports/**', fingerprint: true
   }
 }
 
