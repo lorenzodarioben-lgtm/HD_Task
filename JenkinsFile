@@ -206,10 +206,17 @@ stage('Deploy - Staging') {
 }
 
 stage('Release - Production') {
-  when { branch 'main' } // keep or remove as you prefer
+  // Robust guard: run on main branch OR when manually triggered with RELEASE_PROD=true
+  when {
+    expression {
+      def b1 = (env.BRANCH_NAME ?: '').replaceFirst(/^origin\//,'').replaceFirst(/^refs\/heads\//,'')
+      def b2 = (env.GIT_BRANCH  ?: '').replaceFirst(/^origin\//,'').replaceFirst(/^refs\/heads\//,'')
+      return (b1 == 'main' || b2 == 'main') || (params?.RELEASE_PROD as boolean)
+    }
+  }
   steps {
     script {
-      // --- Optional: manual approval before prod ---
+      // --- Optional manual approval before PROD ---
       input message: "Promote build ${env.BUILD_NUMBER} to PRODUCTION?", ok: 'Deploy'
 
       bat '''
@@ -235,8 +242,8 @@ stage('Release - Production') {
 
         rem --- (optional) push to a registry if you have one ---
         rem docker login <your-registry>
-        rem docker tag "!IMAGE!" <your-registry>/"!IMAGE!"
-        rem docker push <your-registry>/"!IMAGE!"
+        rem docker tag "!IMAGE!" <your-registry>/"!IMGNAME!:%BUILD_NUMBER%"
+        rem docker push <your-registry>/"!IMGNAME!:%BUILD_NUMBER%"
 
         rem --- keep a backup of last-good for rollback ---
         if exist build\\prod-last-good.txt copy /Y build\\prod-last-good.txt build\\prod-last-good.prev >NUL 2>&1
@@ -296,7 +303,7 @@ stage('Release - Production') {
           docker compose -p sl_prod -f docker-compose.production.yml up -d --remove-orphans || echo ok
           popd
 
-          echo "Rollback attempted. Check health manually at http://localhost:5003/health"
+          echo Rollback attempted. Check health at http://localhost:5003/health
         ) else (
           echo No last-good image found. Manual intervention required.
         )
@@ -305,6 +312,7 @@ stage('Release - Production') {
     }
   }
 }
+
 
 
     stage('Archive artefacts') {
