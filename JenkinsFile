@@ -206,17 +206,9 @@ stage('Deploy - Staging') {
 }
 
 stage('Release - Production') {
-  // Robust guard: run on main branch OR when manually triggered with RELEASE_PROD=true
-  when {
-    expression {
-      def b1 = (env.BRANCH_NAME ?: '').replaceFirst(/^origin\//,'').replaceFirst(/^refs\/heads\//,'')
-      def b2 = (env.GIT_BRANCH  ?: '').replaceFirst(/^origin\//,'').replaceFirst(/^refs\/heads\//,'')
-      return (b1 == 'main' || b2 == 'main') || (params?.RELEASE_PROD as boolean)
-    }
-  }
+  // allow manual promotion on any branch by leaving this when out or keep your current guard
   steps {
     script {
-      // --- Optional manual approval before PROD ---
       input message: "Promote build ${env.BUILD_NUMBER} to PRODUCTION?", ok: 'Deploy'
 
       bat '''
@@ -240,11 +232,6 @@ stage('Release - Production') {
         docker tag "!IMAGE!" "!PROD_TAG!"
         docker tag "!IMAGE!" "!LATEST_TAG!"
 
-        rem --- (optional) push to a registry if you have one ---
-        rem docker login <your-registry>
-        rem docker tag "!IMAGE!" <your-registry>/"!IMGNAME!:%BUILD_NUMBER%"
-        rem docker push <your-registry>/"!IMGNAME!:%BUILD_NUMBER%"
-
         rem --- keep a backup of last-good for rollback ---
         if exist build\\prod-last-good.txt copy /Y build\\prod-last-good.txt build\\prod-last-good.prev >NUL 2>&1
         echo !PROD_TAG! > build\\prod-candidate.txt
@@ -259,20 +246,19 @@ stage('Release - Production') {
         popd
       '''
 
-      // --- Health gate (PRODUCTION) ---
-      bat """
+      // HEALTH CHECK: use SINGLE-QUOTED Groovy string so $ isn't interpolated
+      bat '''
         powershell -NoProfile -Command ^
-          \"$ErrorActionPreference='Stop'; ^
-            \$ok=\$false; for(\$i=0;\$i -lt 90;\$i++){ ^
+          "$ErrorActionPreference='Stop'; ^
+            $ok=$false; for($i=0;$i -lt 90;$i++){ ^
               try{ ^
-                \$r=Invoke-WebRequest 'http://localhost:5003/health' -UseBasicParsing; ^
-                if(\$r.StatusCode -eq 200){ \$ok=\$true; break } ^
+                $r=Invoke-WebRequest 'http://localhost:5003/health' -UseBasicParsing; ^
+                if($r.StatusCode -eq 200){ $ok=$true; break } ^
               } catch { Start-Sleep -s 2 } ^
             }; ^
-            if(-not \$ok){ Write-Error 'PROD app did not become healthy in time'; exit 1 }\"
-      """
+            if(-not $ok){ Write-Error 'PROD app did not become healthy in time'; exit 1 }"
+      '''
 
-      // mark this image as last-good only after health passes
       bat '''
         copy /Y build\\prod-candidate.txt build\\prod-last-good.txt >NUL
         echo Production release healthy.
@@ -285,12 +271,28 @@ stage('Release - Production') {
     }
     failure {
       echo '❌ Production deploy failed – attempting rollback...'
-      // Grab logs to help debugging
-      bat 'if not exist reports mkdir reports'
-      bat 'docker compose -p sl_prod -f deploy\\docker-compose.production.yml ps   > reports\\prod-ps.txt   || echo ok'
-      bat 'docker compose -p sl_prod -f deploy\\docker-compose.production.yml logs > reports\\prod-logs.txt || echo ok'
+      // Collect diagnostics – ensure IMAGE is set for compose
+      bat '''
+        if not exist reports mkdir reports
 
-      // Roll back to the last known good image if available
+        rem read the candidate image (if present) so ${IMAGE} resolves
+        set "IMAGE="
+        if exist build\\prod-candidate.txt (
+          for /f %%i in (build\\prod-candidate.txt) do set "IMAGE=%%i"
+        )
+
+        pushd deploy
+        if defined IMAGE (
+          set IMAGE=%IMAGE%
+        ) else (
+          rem fallback to a dummy so compose still parses
+          set IMAGE=flask-shopping-list:latest
+        )
+        docker compose -p sl_prod -f docker-compose.production.yml ps   > "..\\reports\\prod-ps.txt"   || echo ok
+        docker compose -p sl_prod -f docker-compose.production.yml logs > "..\\reports\\prod-logs.txt" || echo ok
+        popd
+      '''
+      // Roll back to last good
       bat '''
         setlocal ENABLEDELAYEDEXPANSION
         if exist build\\prod-last-good.txt (
@@ -312,8 +314,6 @@ stage('Release - Production') {
     }
   }
 }
-
-
 
     stage('Archive artefacts') {
       steps {

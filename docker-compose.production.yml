@@ -1,9 +1,9 @@
 version: "3.9"
 services:
   web:
-    image: ${IMAGE}             # injected by Jenkins during release
+    image: "${IMAGE}"            # injected by Jenkins during release
     ports:
-      - "5003:5000"             # PRODUCTION host:container
+      - "5003:5000"              # PRODUCTION host:container
     environment:
       FLASK_ENV: production
       CI: "true"
