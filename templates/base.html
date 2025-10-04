@@ -19,10 +19,11 @@
       <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
         {% if current_user.is_authenticated %}
         <li class="nav-item">
-          <form class="d-inline" action="{{ url_for('routes.logout') }}" method="post">
-            {{ csrf_token() }}
-            <button class="btn btn-outline-secondary btn-sm">Logout</button>
-          </form>
+<form class="d-inline" action="{{ url_for('routes.logout') }}" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button type="submit" class="btn btn-outline-secondary btn-sm">Logout</button>
+</form>
+
         </li>
         {% else %}
         <li class="nav-item"><a class="nav-link" href="{{ url_for('routes.login') }}">Login</a></li>
