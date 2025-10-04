@@ -10,6 +10,9 @@ pipeline {
       }
     }
 
+
+
+
     stage('Build') {
       steps {
         // optional diagnostics
@@ -33,6 +36,10 @@ pipeline {
         '''
       }
     }
+
+
+
+
 stage('Test - Unit') {
   steps {
     bat '''
@@ -69,6 +76,7 @@ stage('Test - Unit') {
 }
 
 
+
 stage('Test - Smoke') {
   steps {
     bat '''
@@ -97,6 +105,9 @@ stage('Test - Smoke') {
     }
   }
 }
+
+
+
 stage('Code Quality') {
   steps {
     script {
@@ -115,6 +126,9 @@ stage('Code Quality') {
     }
   }
 }
+
+
+
 
 stage('Security') {
   steps {
@@ -149,6 +163,10 @@ stage('Security') {
     archiveArtifacts artifacts: 'reports/**', fingerprint: true
   }
 }
+
+
+
+
 stage('Deploy - Staging') {
   // keep your when{} guard if you want; removing it makes this always run
   steps {
@@ -202,6 +220,7 @@ if (-not $ok) { throw "Staging app did not become healthy in time" }
     }
   }
 }
+
 
 
 stage('Release - Production') {
@@ -323,6 +342,10 @@ if (-not $ok) {
     }
   }
 }
+
+
+
+
 stage('Monitoring & Alerting (Datadog)') {
   when { expression { currentBuild.currentResult == 'SUCCESS' } }
   steps {
