@@ -116,6 +116,71 @@ stage('Code Quality') {
   }
 }
 
+stage('Security') {
+  environment {
+    IMAGE_FULL = "${IMAGE_NAME}:${IMAGE_TAG}"
+  }
+  steps {
+    script {
+      // Make sure reports dirs exist
+      bat '''
+        if not exist reports mkdir reports
+        if not exist reports\\junit mkdir reports\\junit
+      '''
+
+      // --- Run pip-audit (dependency vulns) + Bandit (SAST) inside a Python container
+      // We keep exit codes non-fatal here; we gate below.
+      bat '''
+        docker run --rm -v "%cd%":/work -w /work python:3.11-slim sh -lc "
+          pip install --no-cache-dir pip-audit bandit >/dev/null 2>&1 && \
+          pip-audit -r requirements.txt -f json -o reports/pip-audit.json || true && \
+          bandit -r app -iii -q -f junit -o reports/junit/bandit.xml || true
+        "
+      '''
+
+      // --- Scan the built image with Trivy
+      // Save a human-readable summary + a SARIF you could upload later if you want.
+      // We do one run to write reports, then a small gate run to control build result.
+      bat '''
+        docker run --rm ^
+          -v /var/run/docker.sock:/var/run/docker.sock ^
+          -v "%cd%\\reports":/reports ^
+          aquasec/trivy:0.53.0 image %IMAGE_FULL% ^
+            --ignore-unfixed ^
+            --scanners vuln ^
+            --severity HIGH,CRITICAL ^
+            --format table --output /reports/trivy-image.txt ^
+            --format sarif --output /reports/trivy-image.sarif || true
+      '''
+
+      // --- Gates:
+      // Fail build on CRITICAL image vulns
+      catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+        bat '''
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.53.0 ^
+            image %IMAGE_FULL% --ignore-unfixed --scanners vuln --severity CRITICAL --quiet --exit-code 1
+        '''
+      }
+
+      // Mark UNSTABLE if Bandit JUnit shows failures or Trivy finds HIGH vulns
+      // (Trivy: exit 0 but we detect high via exit-code 1 to flip UNSTABLE without failing)
+      catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+        bat '''
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.53.0 ^
+            image %IMAGE_FULL% --ignore-unfixed --scanners vuln --severity HIGH --quiet --exit-code 1
+        '''
+      }
+    }
+
+    // Publish Bandit findings into “Tests” so you see a trend
+    junit testResults: 'reports/junit/bandit.xml', allowEmptyResults: true
+
+    // Always keep the security artifacts
+    archiveArtifacts artifacts: 'reports/**', fingerprint: true, onlyIfSuccessful: false
+  }
+}
+
+
     stage('Archive artefacts') {
       steps {
         archiveArtifacts artifacts: 'build/**', fingerprint: true
