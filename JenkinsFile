@@ -97,6 +97,36 @@ stage('Test - Smoke') {
     }
   }
 }
+stage('Code Quality (SonarQube)') {
+  steps {
+    // Populate SONAR_HOST_URL and SONAR_AUTH_TOKEN from Jenkins config
+    withSonarQubeEnv('My SonarQube') {
+      bat '''
+        setlocal ENABLEDELAYEDEXPANSION
+        rem Ensure project version is the Jenkins build number
+        powershell -Command "$p = Get-Content sonar-project.properties; \
+          if(-not ($p -match 'sonar.projectVersion')){ Add-Content sonar-project.properties ('sonar.projectVersion=' + $env:BUILD_NUMBER) } \
+          else { (Get-Content sonar-project.properties) -replace 'sonar.projectVersion=.*','sonar.projectVersion=' + $env:BUILD_NUMBER | Set-Content sonar-project.properties }"
+
+        rem Run Sonar scanner in Docker; mount workspace so it can read sources & reports
+        docker run --rm ^
+          -e SONAR_HOST_URL=%SONAR_HOST_URL% ^
+          -e SONAR_LOGIN=%SONAR_AUTH_TOKEN% ^
+          -v "%cd%":/usr/src ^
+          sonarsource/sonar-scanner-cli:5.0
+      '''
+    }
+  }
+}
+
+stage('Quality Gate') {
+  steps {
+    timeout(time: 10, unit: 'MINUTES') {
+      // Hard gate: FAIL the pipeline if the Quality Gate fails
+      waitForQualityGate abortPipeline: true
+    }
+  }
+}
 
 
 
