@@ -324,20 +324,18 @@ if (-not $ok) {
   }
 }
 stage('Monitoring & Alerting (Datadog)') {
-  when { expression { return currentBuild.currentResult == 'SUCCESS' } } // only if build succeeded
+  when { expression { currentBuild.currentResult == 'SUCCESS' } }
   steps {
-    withCredentials([string(credentialsId: 'Datadog', variable: 'DD_API_KEY')]) {
+    withCredentials([string(credentialsId: 'DATADOG_API_KEY', variable: 'DD_API_KEY')]) {
       script {
+        // Launch/refresh the Datadog agent
         bat '''
           echo Starting Datadog monitoring agent...
+          docker rm -f dd-agent 2>nul || echo No existing Datadog agent running
 
-          rem Stop any existing Datadog agent (if already running)
-          docker rm -f dd-agent 2>nul || echo "No existing Datadog agent running"
-
-          rem Run Datadog agent container in detached mode
           docker run -d --name dd-agent ^
             -e DD_API_KEY=%DD_API_KEY% ^
-            -e DD_SITE="ap2.datadoghq.com" ^
+            -e DD_SITE=ap2.datadoghq.com ^
             -e DD_DOGSTATSD_NON_LOCAL_TRAFFIC=true ^
             -v /var/run/docker.sock:/var/run/docker.sock:ro ^
             -v /proc/:/host/proc/:ro ^
@@ -345,29 +343,19 @@ stage('Monitoring & Alerting (Datadog)') {
             -v /var/lib/docker/containers:/var/lib/docker/containers:ro ^
             gcr.io/datadoghq/agent:7
 
-          rem Confirm agent is running
           docker ps -a | findstr dd-agent
-
-          echo Datadog agent launched successfully.
         '''
 
-        // Optional: confirm the web app is healthy
+        // ONE-LINE PowerShell health check (no carets, no multiline)
         bat '''
-          powershell -NoProfile -Command ^
-            "$r = Invoke-WebRequest -Uri 'http://localhost:5003/health' -UseBasicParsing; ^
-             if ($r.StatusCode -eq 200) { Write-Host '✅ App is healthy, Datadog agent is monitoring it.' } ^
-             else { Write-Error '❌ App health check failed.'; exit 1 }"
+          powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $r=Invoke-WebRequest -Uri 'http://localhost:5003/health' -UseBasicParsing; if ($r.StatusCode -eq 200) { Write-Host '✅ App is healthy, Datadog agent is monitoring it.'; exit 0 } else { Write-Error '❌ App health check failed.'; exit 1 }"
         '''
       }
     }
   }
   post {
-    success {
-      echo '✅ Datadog Agent running and monitoring production.'
-    }
-    failure {
-      echo '❌ Datadog Monitoring failed. Check Jenkins logs.'
-    }
+    success { echo '✅ Datadog Agent running and app is healthy.' }
+    failure { echo '❌ Datadog Monitoring stage failed. See console log.' }
   }
 }
 
