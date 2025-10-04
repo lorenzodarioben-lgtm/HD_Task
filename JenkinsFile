@@ -34,6 +34,45 @@ pipeline {
       }
     }
 
+    stage('Test') {
+  steps {
+    bat '''
+      setlocal ENABLEDELAYEDEXPANSION
+      for /f %%i in ('git rev-parse --short HEAD') do set COMMIT=%%i
+      set IMAGE_NAME=flask-shopping-list
+      set IMAGE_TAG=%BUILD_NUMBER%-%COMMIT%
+
+      if exist reports rmdir /s /q reports
+      mkdir reports\\junit
+
+      rem ---- Unit + API tests with coverage (fail if <75%) ----
+      docker run --rm ^
+        -e PYTHONPATH=/app ^
+        -v "%cd%\\tests":/tests ^
+        -v "%cd%\\reports":/tests/reports ^
+        %IMAGE_NAME%:%IMAGE_TAG% ^
+        sh -lc "pip install -q pytest pytest-cov && pytest /tests --maxfail=1 --disable-warnings --cov=app --cov-report=xml:/tests/reports/coverage.xml --cov-fail-under=75 --junitxml=/tests/reports/junit/pytest-unit.xml"
+
+      rem ---- Integration smoke: run the container and probe endpoints ----
+      docker rm -f sl_test 2>nul || echo ok
+      docker run -d --name sl_test -p 5001:5000 %IMAGE_NAME%:%IMAGE_TAG%
+
+      powershell -Command "$ErrorActionPreference='Stop'; \
+        for($i=0;$i -lt 30;$i++){ try { \
+          $h=Invoke-WebRequest http://localhost:5001/health -UseBasicParsing; \
+          if($h.StatusCode -eq 200){ break } \
+        } catch { Start-Sleep -s 2 } }; \
+        $l=Invoke-WebRequest http://localhost:5001/login -UseBasicParsing; \
+        if($l.StatusCode -ne 200){ exit 1 }"
+
+      docker rm -f sl_test
+    '''
+    junit 'reports/junit/pytest-unit.xml'
+    archiveArtifacts artifacts: 'reports/**', fingerprint: true
+  }
+}
+
+
     stage('Archive artefacts') {
       steps {
         archiveArtifacts artifacts: 'build/**', fingerprint: true
