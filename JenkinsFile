@@ -151,7 +151,7 @@ stage('Security') {
 }
 
 stage('Deploy - Staging') {
-  when { branch 'main' } // remove this if you want to deploy from any branch
+  when { branch 'main' } // remove this line if you want to deploy from any branch
   steps {
     script {
       // Deploy with Docker Compose using the image built earlier
@@ -204,6 +204,7 @@ stage('Deploy - Staging') {
     }
   }
 }
+
 
 
     stage('Archive artefacts') {

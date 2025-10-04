@@ -1,0 +1,14 @@
+version: "3.9"
+services:
+  web:
+    image: ${REGISTRY}/flask-shopping-list:${IMAGE_TAG}
+    ports:
+      - "5001:5000"
+    env_file:
+      - ./staging.env
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:5000/health"]
+      interval: 5s
+      timeout: 2s
+      retries: 6
+    restart: always
