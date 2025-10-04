@@ -1,12 +1,13 @@
+version: "3.9"
 services:
   web:
-    image: ${IMAGE}              # Jenkins exports IMAGE before running compose
+    image: ${IMAGE}              # set by the Jenkins stage
     ports:
-      - "5002:5000"              # host:container (staging on 5002)
+      - "5002:5000"
     env_file:
-      - ./staging.env            # read KEY=VALUE pairs from this file
+      - ../staging.env           # <— add this
     environment:
-      CI: "true"
+      CI: "true"                 # keep only extras here; don't duplicate SECRET_KEY/FLASK_ENV
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:5000/health"]
       interval: 5s
