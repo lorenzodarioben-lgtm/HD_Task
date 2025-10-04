@@ -1,9 +1,13 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_user, login_required, logout_user, current_user
+
+# 👇 relative imports
 from .models import db, User, ShoppingList, Item
 from .forms import RegisterForm, LoginForm, ListForm, ItemForm
 
 bp = Blueprint("routes", __name__)
+# ... rest unchanged
+
 
 # ---------- Auth ----------
 @bp.get("/register")

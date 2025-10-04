@@ -1,11 +1,14 @@
 # tests/conftest.py
-import pytest, pathlib
+import pytest
+from pathlib import Path
+
 try:
-    # If running inside the image (your code is /app/app)
+    # When running inside the container: your code is at /app/app
     from app import create_app
 except Exception:
-    # If running directly from the workspace (top-level __init__.py)
+    # When running locally from the repo root: files are top-level
     from __init__ import create_app
+
 
 @pytest.fixture()
 def app(tmp_path):
@@ -19,6 +22,7 @@ def app(tmp_path):
     }
     app = create_app(cfg)
     yield app
+
 
 @pytest.fixture()
 def client(app):
