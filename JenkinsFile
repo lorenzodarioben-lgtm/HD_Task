@@ -1,34 +1,43 @@
 pipeline {
   agent any
   environment {
-    IMAGE_NAME = 'flask-shopping-list'
+    IMAGE_NAME = 'flask-shopping-list'  // change if you like
   }
-node {
-  stage('Build') {
-    bat 'where docker'
-    bat 'docker --version'
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
 
-    def IMAGE_NAME = 'flask-shopping-list'
-    bat '''
-      for /f %%i in ('git rev-parse --short HEAD') do set COMMIT=%%i
-      echo COMMIT=%COMMIT%
-      set IMAGE_TAG=%BUILD_NUMBER%-%COMMIT%
-      echo IMAGE_TAG=%IMAGE_TAG%
-      if not exist build mkdir build
+    stage('Build') {
+      steps {
+        // optional diagnostics
+        bat 'where docker'
+        bat 'docker --version'
 
-      rem Build image
-      docker build -t %IMAGE_NAME%:%IMAGE_TAG% .
+        // Compute COMMIT + IMAGE_TAG, then build and save artefact
+        bat '''
+          setlocal ENABLEDELAYEDEXPANSION
+          for /f %%i in ('git rev-parse --short HEAD') do set COMMIT=%%i
+          set IMAGE_TAG=%BUILD_NUMBER%-%COMMIT%
 
-      rem Record metadata (avoid Go template quoting on Windows)
-      docker images --no-trunc --quiet %IMAGE_NAME%:%IMAGE_TAG% > build\\image-id.txt
-      echo %IMAGE_NAME%:%IMAGE_TAG% > build\\image-tag.txt
+          if not exist build mkdir build
 
-      rem Save a portable artefact
-      docker save -o build\\%IMAGE_NAME%-%IMAGE_TAG%.tar %IMAGE_NAME%:%IMAGE_TAG%
-    '''
-    archiveArtifacts artifacts: 'build/**', fingerprint: true
+          docker build -t %IMAGE_NAME%:%IMAGE_TAG% .
+
+          docker images --no-trunc --quiet %IMAGE_NAME%:%IMAGE_TAG% > build\\image-id.txt
+          echo %IMAGE_NAME%:%IMAGE_TAG% > build\\image-tag.txt
+
+          docker save -o build\\%IMAGE_NAME%-%IMAGE_TAG%.tar %IMAGE_NAME%:%IMAGE_TAG%
+        '''
+      }
+    }
+
+    stage('Archive artefacts') {
+      steps {
+        archiveArtifacts artifacts: 'build/**', fingerprint: true
+      }
+    }
   }
 }
-
-  }
-
