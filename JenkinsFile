@@ -326,7 +326,7 @@ if (-not $ok) {
 stage('Monitoring & Alerting (Datadog)') {
   when { expression { return currentBuild.currentResult == 'SUCCESS' } } // only if build succeeded
   steps {
-    withCredentials([string(credentialsId: 'DATADOG_API_KEY', variable: 'DD_API_KEY')]) {
+    withCredentials([string(credentialsId: 'Datadog', variable: 'DD_API_KEY')]) {
       script {
         bat '''
           echo Starting Datadog monitoring agent...
