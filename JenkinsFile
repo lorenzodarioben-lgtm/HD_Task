@@ -97,43 +97,29 @@ stage('Test - Smoke') {
     }
   }
 }
-stage('Code Quality (SonarQube)') {
+stage('Code Quality') {
   steps {
-    withSonarQubeEnv('HD') { // injects SONAR_HOST_URL and SONAR_AUTH_TOKEN
-      bat '''
-        rem --- Fail fast if Jenkins didn’t provide a token ---
-        if "%SONAR_AUTH_TOKEN%"=="" (
-          echo [ERROR] SONAR_AUTH_TOKEN is empty. Check Manage Jenkins^>System^>SonarQube servers and set a valid "Server authentication token".
-          exit /b 2
-        )
-
-        rem --- Make URL reachable from inside the container (fix localhost) ---
-        set "SONAR_URL=%SONAR_HOST_URL:localhost=host.docker.internal%"
-        echo Using Sonar URL: %SONAR_URL%
-
-        rem --- Validate the token from INSIDE Docker (should return {"valid":true}) ---
-        docker run --rm curlimages/curl:8.8.0 ^
-          -s -f -u %SONAR_AUTH_TOKEN%: ^
-          "%SONAR_URL%/api/authentication/validate" || (
-            echo [ERROR] Token validation failed (bad token or insufficient perms). ^
-            echo        Ensure the token owner has "Execute Analysis" (and "Create Projects" if project auto-create is needed). ^
-            exit /b 2
-          )
-        echo Token validated OK.
-
-        rem --- Run sonar-scanner in Docker (pass token both ways for robustness) ---
-        docker run --rm ^
-          -e SONAR_TOKEN=%SONAR_AUTH_TOKEN% ^
-          -v "%cd%":/usr/src ^
-          sonarsource/sonar-scanner-cli:5.0 ^
-          -Dsonar.host.url=%SONAR_URL% ^
-          -Dsonar.token=%SONAR_AUTH_TOKEN% ^
-          -Dsonar.projectBaseDir=/usr/src ^
-          -Dsonar.projectVersion=%BUILD_NUMBER%
-      '''
+    script {
+      def scannerHome = tool name: 'SonarScanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
+      withCredentials([string(credentialsId: 'jenkins-sonar', variable: 'SONAR_TOKEN')]) {
+        withSonarQubeEnv('SonarQube-Local') {
+          bat """
+            "${scannerHome}\\bin\\sonar-scanner.bat" ^
+              -Dsonar.projectKey=flask-shopping-list ^
+              -Dsonar.projectName=Flask Shopping List ^
+              -Dsonar.sources=. ^
+              -Dsonar.tests=tests ^
+              -Dsonar.python.version=3.11 ^
+              -Dsonar.python.coverage.reportPaths=reports/coverage.xml ^
+              -Dsonar.projectVersion=%BUILD_NUMBER% ^
+              -Dsonar.token=%SONAR_TOKEN%
+          """
+        }
+      }
     }
   }
 }
+
 
 
 
