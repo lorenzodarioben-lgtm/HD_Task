@@ -101,21 +101,22 @@ stage('Code Quality (SonarQube)') {
   steps {
     withSonarQubeEnv('HD') {
       bat '''
-        rem --- Make SONAR_HOST_URL usable from inside the Docker container ---
+        rem --- Make host URL reachable from inside the container (localhost -> host.docker.internal) ---
         set "SONAR_URL=%SONAR_HOST_URL:localhost=host.docker.internal%"
 
-        rem --- Run sonar-scanner in Docker, mounting the workspace ---
+        rem --- Run sonar-scanner in Docker ---
         docker run --rm ^
-          -e SONAR_HOST_URL=%SONAR_URL% ^
-          -e SONAR_TOKEN=%SONAR_AUTH_TOKEN% ^
           -v "%cd%":/usr/src ^
           sonarsource/sonar-scanner-cli:5.0 ^
+          -Dsonar.host.url=%SONAR_URL% ^
+          -Dsonar.token=%SONAR_AUTH_TOKEN% ^
           -Dsonar.projectBaseDir=/usr/src ^
           -Dsonar.projectVersion=%BUILD_NUMBER%
       '''
     }
   }
 }
+
 
 
 stage('Quality Gate') {
