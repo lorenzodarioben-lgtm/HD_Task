@@ -1,15 +1,15 @@
-# (optional) remove 'version:' line to silence the warning
 services:
   web:
-    image: ${IMAGE}
+    image: ${IMAGE}              # Jenkins exports IMAGE before running compose
     ports:
-      - "5002:5000"
+      - "5002:5000"              # host:container (staging on 5002)
     env_file:
-      - ./staging.env   # <— from inside the deploy folder
+      - ./staging.env            # read KEY=VALUE pairs from this file
     environment:
       CI: "true"
+    
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://localhost:5000/health'); sys.exit(0)"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:5000/health"]
       interval: 5s
       timeout: 2s
       retries: 15

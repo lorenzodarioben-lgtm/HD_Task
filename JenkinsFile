@@ -10,9 +10,6 @@ pipeline {
       }
     }
 
-
-
-
     stage('Build') {
       steps {
         // optional diagnostics
@@ -36,10 +33,7 @@ pipeline {
         '''
       }
     }
-
-
-
-
+    
 stage('Test - Unit') {
   steps {
     bat '''
@@ -208,22 +202,18 @@ if (-not $ok) { throw "Staging app did not become healthy in time" }
 '''
     }
   }
-post {
-  success {
-    echo 'Staging deployed & healthy at http://localhost:5002'
-  }
-  failure {
-    // collect diagnostics; ensure IMAGE is exported for compose variable substitution
-    bat '''
-      if not exist reports mkdir reports
-      for /f %%i in (build\\image-tag.txt) do set "IMAGE=%%i"
-      docker compose -p sl_staging -f deploy\\docker-compose.staging.yml ps   > reports\\deploy-ps.txt   || echo ok
-      docker compose -p sl_staging -f deploy\\docker-compose.staging.yml logs > reports\\deploy-logs.txt || echo ok
-    '''
-    archiveArtifacts artifacts: 'reports/deploy-*.txt', fingerprint: true
+  post {
+    success {
+      echo 'Staging deployed & healthy at http://localhost:5002'
+    }
+    failure {
+      bat 'if not exist reports mkdir reports'
+      bat 'docker compose -p sl_staging -f deploy\\docker-compose.staging.yml ps   > reports\\deploy-ps.txt   || echo ok'
+      bat 'docker compose -p sl_staging -f deploy\\docker-compose.staging.yml logs > reports\\deploy-logs.txt || echo ok'
+      archiveArtifacts artifacts: 'reports/deploy-*.txt', fingerprint: true
+    }
   }
 }
-
 
 
 
@@ -297,10 +287,10 @@ if (-not $ok) {
   }
   post {
     success {
-      echo " Production deployed & healthy at http://localhost:5003"
+      echo "✅ Production deployed & healthy at http://localhost:5003"
     }
     failure {
-      echo ' Production deploy failed – attempting rollback...'
+      echo '❌ Production deploy failed – attempting rollback...'
 
       // Diagnostics (ensure IMAGE is set so compose parses)
       bat '''
@@ -375,14 +365,14 @@ stage('Monitoring & Alerting (Datadog)') {
 
         // ONE-LINE PowerShell health check (no carets, no multiline)
         bat '''
-          powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $r=Invoke-WebRequest -Uri 'http://localhost:5003/health' -UseBasicParsing; if ($r.StatusCode -eq 200) { Write-Host ' App is healthy, Datadog agent is monitoring it.'; exit 0 } else { Write-Error '❌ App health check failed.'; exit 1 }"
+          powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $r=Invoke-WebRequest -Uri 'http://localhost:5003/health' -UseBasicParsing; if ($r.StatusCode -eq 200) { Write-Host '✅ App is healthy, Datadog agent is monitoring it.'; exit 0 } else { Write-Error '❌ App health check failed.'; exit 1 }"
         '''
       }
     }
   }
   post {
-    success { echo ' Datadog Agent running and app is healthy.' }
-    failure { echo ' Datadog Monitoring stage failed. See console log.' }
+    success { echo '✅ Datadog Agent running and app is healthy.' }
+    failure { echo '❌ Datadog Monitoring stage failed. See console log.' }
   }
 }
 
@@ -393,5 +383,4 @@ stage('Monitoring & Alerting (Datadog)') {
       }
     }
   }
-}
 }

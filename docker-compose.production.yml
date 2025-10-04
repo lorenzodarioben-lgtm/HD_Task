@@ -1,15 +1,14 @@
+version: "3.9"
 services:
   web:
-    image: ${IMAGE}                 # set by the Jenkins Release stage
+    image: "${IMAGE}"            # injected by Jenkins during release
     ports:
-      - "5003:5000"                 # host:container
-    env_file:
-      - ../production.env           # load FLASK_ENV, SECRET_KEY, DATABASE_URL, etc.
+      - "5003:5000"              # PRODUCTION host:container
     environment:
-      CI: "true"                    # extra flags; avoid duplicating keys from env_file
+      FLASK_ENV: production
+      CI: "true"
     healthcheck:
-      # Python is always available in this image; avoids relying on curl/wget
-      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://localhost:5000/health'); sys.exit(0)"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:5000/health"]
       interval: 5s
       timeout: 2s
       retries: 15
