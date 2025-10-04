@@ -52,17 +52,17 @@ stage('Test - Unit') {
         -w /tests ^
         %IMAGE_NAME%:%IMAGE_TAG% ^
         sh -lc "pip install -q pytest pytest-cov && \
-                pytest -vv -rA --color=yes \
+                pytest -q --color=no \
                   --maxfail=1 --disable-warnings \
-                  --cov=app --cov-report=xml:/tests/reports/coverage.xml \
-                  --cov-fail-under=75 \
+                  --cov=app --cov-report=term:skip-covered \
+                  --cov-report=xml:/tests/reports/coverage.xml \
+                  --cov-fail-under=85 \
                   --junitxml=/tests/reports/junit/pytest-unit.xml"
     '''
   }
   post {
     always {
-      // while iterating, keep this tolerant so a crash doesn't cause a second failure
-      junit testResults: 'reports/junit/pytest-unit.xml', allowEmptyResults: true
+      junit 'reports/junit/pytest-unit.xml'
       archiveArtifacts artifacts: 'reports/**', fingerprint: true
     }
   }
