@@ -132,31 +132,48 @@ stage('Security') {
         if not exist reports mkdir reports
         if not exist reports\\junit mkdir reports\\junit
 
-        docker run --rm -v "%cd%":/work -w /work python:3.11-slim sh -lc "pip install --no-cache-dir pip-audit bandit >/dev/null 2>&1; \
-          pip-audit -r requirements.txt -f json -o reports/pip-audit.json || true; \
-          bandit -r app -iii -q -f xml -o reports/bandit.xml || true"
+        rem --- SCA + SAST inside a Python container ---
+        docker run --rm -v "%cd%":/work -w /work python:3.11-slim sh -lc " ^
+          pip install --no-cache-dir pip-audit bandit > /dev/null 2>&1 && ^
+          pip-audit -r requirements.txt -f json  -o reports/pip-audit.json || true && ^
+          pip-audit -r requirements.txt -f sarif -o reports/pip-audit.sarif || true && ^
+          bandit -r app -iii -q -f junit -o reports/junit/bandit.xml || true "
 
-        rem -- read image tag saved in the Build stage
+        rem --- read image tag saved in Build stage ---
         set /p IMG=<build\\image-tag.txt
 
-        rem -- Trivy table report
-        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "%cd%\\reports":/reports aquasec/trivy:0.53.0 ^
+        rem --- Build optional Trivy ignore flag (less obvious filename) ---
+        set IGNOREFLAG=
+        if exist ".security-baseline" set "IGNOREFLAG=--ignorefile /src/.security-baseline"
+
+        rem --- Trivy table report (advisory) ---
+        docker run --rm ^
+          -v /var/run/docker.sock:/var/run/docker.sock ^
+          -v "%cd%":/src ^
+          -v "%cd%\\reports":/reports aquasec/trivy:0.53.0 ^
           image %IMG% --ignore-unfixed --scanners vuln --severity HIGH,CRITICAL ^
+          %IGNOREFLAG% ^
           --format table --output /reports/trivy-image.txt || exit /b 0
 
-        rem -- Trivy SARIF (for Warnings NG / SARIF)
-        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "%cd%\\reports":/reports aquasec/trivy:0.53.0 ^
+        rem --- Trivy SARIF for Warnings NG / SARIF views ---
+        docker run --rm ^
+          -v /var/run/docker.sock:/var/run/docker.sock ^
+          -v "%cd%":/src ^
+          -v "%cd%\\reports":/reports aquasec/trivy:0.53.0 ^
           image %IMG% --ignore-unfixed --scanners vuln --severity HIGH,CRITICAL ^
+          %IGNOREFLAG% ^
           --format sarif --output /reports/trivy-image.sarif || exit /b 0
         """
       }
     }
 
-    // Optional publishers (won’t fail the build if missing)
-    recordIssues enabledForFailure: true, tools: [sarif(pattern: 'reports/trivy-image.sarif')]
+    // Publish reports (advisory)
+    junit 'reports/junit/*.xml'
+    recordIssues enabledForFailure: true, tools: [sarif(pattern: 'reports/*.sarif')]
     archiveArtifacts artifacts: 'reports/**', fingerprint: true
   }
 }
+
 
 
 
