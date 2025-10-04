@@ -323,6 +323,108 @@ if (-not $ok) {
     }
   }
 }
+stage('Monitoring & Alerting') {
+  steps {
+    script {
+      // Who to alert (set a real list or a Jenkins secret/param)
+      env.ALERT_TO = env.ALERT_TO ?: 'you@example.com'
+
+      // 1) Check Docker container health (compose project: sl_prod, service: web)
+      bat '''
+        rem --- capture health status of the running prod container ---
+        for /f "tokens=*" %%i in ('docker ps --format "{{.Names}}" ^| findstr /I "sl_prod-web"') do set "PROD_CONT=%%i"
+        if not defined PROD_CONT (
+          echo No running prod container found (sl_prod-web-1). 
+          echo HEALTH=missing> build\\monitor-health.txt
+          exit /b 0
+        )
+
+        for /f "tokens=* delims=" %%i in ('docker inspect -f "{{.State.Health.Status}}" "%PROD_CONT%" 2^>NUL') do set "HEALTH=%%i"
+        if not defined HEALTH set HEALTH=unknown
+        echo HEALTH=%HEALTH%> build\\monitor-health.txt
+        echo Container: %PROD_CONT%  Health: %HEALTH%
+      '''
+
+      // 2) Hit the /health endpoint several times; record status & latency
+      powershell '''
+$ErrorActionPreference = "Stop"
+$uri = "http://localhost:5003/health"
+$tries = 5
+$okCount = 0
+$latencies = @()
+
+for ($i=0; $i -lt $tries; $i++) {
+  $sw = [System.Diagnostics.Stopwatch]::StartNew()
+  try {
+    $r = Invoke-WebRequest -UseBasicParsing -Uri $uri -TimeoutSec 5
+    $sw.Stop()
+    $latencies += $sw.ElapsedMilliseconds
+    if ($r.StatusCode -eq 200) { $okCount++ }
+  } catch {
+    $sw.Stop()
+    $latencies += 9999
+  }
+  Start-Sleep -Seconds 1
+}
+
+$avg = [math]::Round(($latencies | Measure-Object -Average).Average, 1)
+$p95 = [math]::Round(($latencies | Sort-Object | Select-Object -Last [int]([math]::Ceiling($tries*0.95)))[-1], 1)
+$summary = "ok=$okCount/$tries avg_ms=$avg p95_ms=$p95"
+$summary | Set-Content -Path "build\\monitor-http.txt"
+Write-Host "HTTP check: $summary"
+'''
+
+      // 3) Grep recent logs for obvious errors
+      bat '''
+        if not exist reports mkdir reports
+        docker compose -p sl_prod -f deploy\\docker-compose.production.yml logs --since=5m > reports\\prod-last5m.log 2>&1 || echo ok
+        findstr /I /C:"ERROR" /C:"Traceback" /C:"CRITICAL" reports\\prod-last5m.log > reports\\prod-errors.log 2>&1 || echo ok
+      '''
+
+      // 4) Decide + alert (simple policy: container not healthy OR < 4/5 OK OR p95 > 800ms OR error lines found)
+      script {
+        def health = readFile('build/monitor-health.txt').trim().replace('HEALTH=','')
+        def http = readFile('build/monitor-http.txt').trim()
+        // parse http summary: ok=K/N avg_ms=A p95_ms=P
+        def m = (http =~ /ok=(\d+)\/(\d+)\s+avg_ms=(\d+(?:\.\d+)?)\s+p95_ms=(\d+(?:\.\d+)?)/)
+        int ok = 0, total = 0; double p95 = 9999
+        if (m.find()) { ok = m.group(1).toInteger(); total = m.group(2).toInteger(); p95 = m.group(4).toDouble() }
+        def errorsLog = fileExists('reports/prod-errors.log') ? readFile('reports/prod-errors.log') : ''
+        boolean hasErrors = errorsLog?.trim()
+
+        def failReasons = []
+        if (!['healthy','starting'].contains(health)) failReasons << "Container health = ${health}"
+        if (ok < Math.max(4, (int)Math.ceil(0.7* (total?:5)))) failReasons << "HTTP success $ok/$total below threshold"
+        if (p95 > 800) failReasons << "HTTP p95 ${p95}ms > 800ms"
+        if (hasErrors) failReasons << "Errors found in logs (last 5m)"
+
+        if (failReasons) {
+          currentBuild.result = 'UNSTABLE'
+          // Email alert (requires Email Extension plugin configured)
+          emailext(
+            subject: "[ALERT][${env.JOB_NAME} #${env.BUILD_NUMBER}] Prod monitor warnings",
+            to: env.ALERT_TO,
+            body: """<p><b>Monitoring detected issues:</b></p>
+                     <ul>${failReasons.collect{ "<li>${it}</li>" }.join('')}</ul>
+                     <p><b>Health:</b> ${health}<br/>
+                        <b>HTTP:</b> ${http.replaceAll('<','&lt;')}<br/>
+                        <b>Logs (last 5m):</b> attached</p>
+                     <p>Build: ${env.BUILD_URL}</p>""",
+            attachmentsPattern: 'reports/prod-last5m.log'
+          )
+          echo "Monitoring flagged issues: ${failReasons.join('; ')}"
+        } else {
+          echo "Monitoring OK: health=${health}, ${http}"
+        }
+      }
+    }
+  }
+  post {
+    always {
+      archiveArtifacts artifacts: 'build/monitor-*.txt,reports/prod-*.log', fingerprint: true
+    }
+  }
+}
 
 
     stage('Archive artefacts') {
