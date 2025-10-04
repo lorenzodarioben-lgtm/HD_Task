@@ -101,7 +101,7 @@ stage('Code Quality') {
   steps {
     script {
       // Resolve the installed scanner
-      def scannerHome = tool name: 'SonarScanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
+      def scannerHome = tool name: 'HD', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
 
       // Inject SONAR_HOST_URL and SONAR_TOKEN from the "HD" server config
       withSonarQubeEnv('HD') {
@@ -116,7 +116,6 @@ stage('Code Quality') {
   }
 }
 
-
 stage('Quality Gate') {
   steps {
     timeout(time: 10, unit: 'MINUTES') {
@@ -124,8 +123,6 @@ stage('Quality Gate') {
     }
   }
 }
-
-
 
 
     stage('Archive artefacts') {
