@@ -149,9 +149,15 @@ stage('Security') {
     archiveArtifacts artifacts: 'reports/**', fingerprint: true
   }
 }
-
 stage('Deploy - Staging') {
-  when { branch 'main' } // remove this line if you want to deploy from any branch
+  when {
+    expression {
+      // Run if this is a multibranch build of 'main' OR a classic job (BRANCH_NAME is null)
+      return (env.BRANCH_NAME == null) ||
+             (env.BRANCH_NAME == 'main') ||
+             (env.GIT_BRANCH?.endsWith('/main'))
+    }
+  }
   steps {
     script {
       // Deploy with Docker Compose using the image built earlier
@@ -177,18 +183,20 @@ stage('Deploy - Staging') {
         popd
       '''
 
-      // Health check on the published port (matches compose file below)
-      bat """
-        powershell -NoProfile -Command ^
-          \"$ErrorActionPreference='Stop'; ^
-            \$ok=\$false; for(\$i=0;\$i -lt 60;\$i++){ ^
-              try{ ^
-                \$r=Invoke-WebRequest 'http://localhost:5002/health' -UseBasicParsing; ^
-                if(\$r.StatusCode -eq 200){ \$ok=\$true; break } ^
-              } catch { Start-Sleep -s 2 } ^
-            }; ^
-            if(-not \$ok){ Write-Error 'Staging app did not become healthy in time'; exit 1 }\"
-      """
+      // Health check (use native PowerShell step to avoid caret/quoting issues)
+      powershell '''
+$ErrorActionPreference = "Stop"
+$ok = $false
+for ($i = 0; $i -lt 60; $i++) {
+  try {
+    $r = Invoke-WebRequest "http://localhost:5002/health" -UseBasicParsing
+    if ($r.StatusCode -eq 200) { $ok = $true; break }
+  } catch {
+    Start-Sleep -Seconds 2
+  }
+}
+if (-not $ok) { Write-Error "Staging app did not become healthy in time"; exit 1 }
+'''
     }
   }
   post {
@@ -196,7 +204,6 @@ stage('Deploy - Staging') {
       echo 'Staging deployed & healthy at http://localhost:5002'
     }
     failure {
-      // collect diagnostics; don't fail if compose is already down
       bat 'if not exist reports mkdir reports'
       bat 'docker compose -p sl_staging -f deploy\\docker-compose.staging.yml ps   > reports\\deploy-ps.txt   || echo ok'
       bat 'docker compose -p sl_staging -f deploy\\docker-compose.staging.yml logs > reports\\deploy-logs.txt || echo ok'
@@ -204,6 +211,7 @@ stage('Deploy - Staging') {
     }
   }
 }
+
 stage('Release - Production') {
   // keep/remove a branch guard if you want; here we allow manual promotion from any branch
   steps {
