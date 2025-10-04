@@ -101,24 +101,24 @@ stage('Code Quality') {
   steps {
     script {
       def scannerHome = tool name: 'SonarScanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
-      withCredentials([string(credentialsId: 'jenkins-sonar', variable: 'SONAR_TOKEN')]) {
-        withSonarQubeEnv('SonarQube-Local') {
-          bat """
-            "${scannerHome}\\bin\\sonar-scanner.bat" ^
-              -Dsonar.projectKey=flask-shopping-list ^
-              -Dsonar.projectName=Flask Shopping List ^
-              -Dsonar.sources=. ^
-              -Dsonar.tests=tests ^
-              -Dsonar.python.version=3.11 ^
-              -Dsonar.python.coverage.reportPaths=reports/coverage.xml ^
-              -Dsonar.projectVersion=%BUILD_NUMBER% ^
-              -Dsonar.token=%SONAR_TOKEN%
-          """
-        }
+      withSonarQubeEnv('HD') {
+        bat """
+          "${scannerHome}\\bin\\sonar-scanner.bat" ^
+            -Dsonar.projectKey=flask-shopping-list ^
+            -Dsonar.projectName=Flask Shopping List ^
+            -Dsonar.sources=. ^
+            -Dsonar.tests=tests ^
+            -Dsonar.python.version=3.11 ^
+            -Dsonar.python.coverage.reportPaths=reports/coverage.xml ^
+            -Dsonar.projectVersion=%BUILD_NUMBER% ^
+            -Dsonar.host.url=%SONAR_HOST_URL% ^
+            -Dsonar.token=%SONAR_AUTH_TOKEN%
+        """
       }
     }
   }
 }
+
 
 
 stage('Quality Gate') {
