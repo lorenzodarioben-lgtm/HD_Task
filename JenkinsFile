@@ -102,19 +102,16 @@ stage('Code Quality (SonarQube)') {
     // Populate SONAR_HOST_URL and SONAR_AUTH_TOKEN from Jenkins config
     withSonarQubeEnv('HD') {
       bat '''
-        setlocal ENABLEDELAYEDEXPANSION
-        rem Ensure project version is the Jenkins build number
-        powershell -Command "$p = Get-Content sonar-project.properties; \
-          if(-not ($p -match 'sonar.projectVersion')){ Add-Content sonar-project.properties ('sonar.projectVersion=' + $env:BUILD_NUMBER) } \
-          else { (Get-Content sonar-project.properties) -replace 'sonar.projectVersion=.*','sonar.projectVersion=' + $env:BUILD_NUMBER | Set-Content sonar-project.properties }"
-
-        rem Run Sonar scanner in Docker; mount workspace so it can read sources & reports
-        docker run --rm ^
-          -e SONAR_HOST_URL=%SONAR_HOST_URL% ^
-          -e SONAR_LOGIN=%SONAR_AUTH_TOKEN% ^
-          -v "%cd%":/usr/src ^
-          sonarsource/sonar-scanner-cli:5.0
-      '''
+  rem --- set sonar.projectVersion to the Jenkins build number ---
+  powershell -NoProfile -Command ^
+    "$p = Get-Content sonar-project.properties -Raw; ^
+     if ($p -notmatch 'sonar.projectVersion') { ^
+       Add-Content sonar-project.properties ('sonar.projectVersion=' + $env:BUILD_NUMBER) ^
+     } else { ^
+       ($p -replace 'sonar\\.projectVersion=.*', ('sonar.projectVersion=' + $env:BUILD_NUMBER)) ^
+         | Set-Content sonar-project.properties ^
+     }"
+'''
     }
   }
 }
