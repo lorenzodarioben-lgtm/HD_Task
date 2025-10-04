@@ -128,15 +128,11 @@ stage('Security') {
         if not exist reports\\junit mkdir reports\\junit
       '''
 
-      // --- Run pip-audit (dependency vulns) + Bandit (SAST) inside a Python container
-      // We keep exit codes non-fatal here; we gate below.
-      bat '''
-        docker run --rm -v "%cd%":/work -w /work python:3.11-slim sh -lc "
-          pip install --no-cache-dir pip-audit bandit >/dev/null 2>&1 && \
-          pip-audit -r requirements.txt -f json -o reports/pip-audit.json || true && \
-          bandit -r app -iii -q -f junit -o reports/junit/bandit.xml || true
-        "
-      '''
+// --- Run pip-audit (SCA) + Bandit (SAST) inside a Python container
+bat """
+docker run --rm -v "%cd%":/work -w /work python:3.11-slim sh -lc "pip install --no-cache-dir pip-audit bandit >/dev/null 2>&1; pip-audit -r requirements.txt -f json -o reports/pip-audit.json || true; bandit -r app -iii -q -f junit -o reports/junit/bandit.xml || true"
+"""
+
 
       // --- Scan the built image with Trivy
       // Save a human-readable summary + a SARIF you could upload later if you want.
