@@ -208,18 +208,22 @@ if (-not $ok) { throw "Staging app did not become healthy in time" }
 '''
     }
   }
-  post {
-    success {
-      echo 'Staging deployed & healthy at http://localhost:5002'
-    }
-    failure {
-      bat 'if not exist reports mkdir reports'
-      bat 'docker compose -p sl_staging -f deploy\\docker-compose.staging.yml ps   > reports\\deploy-ps.txt   || echo ok'
-      bat 'docker compose -p sl_staging -f deploy\\docker-compose.staging.yml logs > reports\\deploy-logs.txt || echo ok'
-      archiveArtifacts artifacts: 'reports/deploy-*.txt', fingerprint: true
-    }
+post {
+  success {
+    echo 'Staging deployed & healthy at http://localhost:5002'
+  }
+  failure {
+    // collect diagnostics; ensure IMAGE is exported for compose variable substitution
+    bat '''
+      if not exist reports mkdir reports
+      for /f %%i in (build\\image-tag.txt) do set "IMAGE=%%i"
+      docker compose -p sl_staging -f deploy\\docker-compose.staging.yml ps   > reports\\deploy-ps.txt   || echo ok
+      docker compose -p sl_staging -f deploy\\docker-compose.staging.yml logs > reports\\deploy-logs.txt || echo ok
+    '''
+    archiveArtifacts artifacts: 'reports/deploy-*.txt', fingerprint: true
   }
 }
+
 
 
 
