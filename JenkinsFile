@@ -151,37 +151,44 @@ stage('Security') {
 }
 
 stage('Deploy - Staging') {
-  when { branch 'main' } // optional: only deploy from main
+  when { branch 'main' } // remove this if you want to deploy from any branch
   steps {
     script {
-      // 1) Read the exact image tag saved in Build stage (e.g. "flask-shopping-list:46-abc1234")
+      // Deploy with Docker Compose using the image built earlier
       bat '''
         setlocal ENABLEDELAYEDEXPANSION
+
+        rem --- prep folders & files ---
         if not exist deploy mkdir deploy
+        if not exist reports mkdir reports
         copy /Y docker-compose.staging.yml deploy\\docker-compose.staging.yml >NUL
 
-        for /f %%i in (build\\image-tag.txt) do set IMAGE=%%i
+        rem --- read image tag written in Build stage (e.g. "flask-shopping-list:46-abc1234") ---
+        for /f %%i in (build\\image-tag.txt) do set "IMAGE=%%i"
         echo Using image: !IMAGE!
 
-        rem 2) Bring the compose stack up (clean old stack first, don’t fail if nothing is running)
+        rem --- stop previous stack (ignore errors if nothing is up) ---
         pushd deploy
-        docker compose -f docker-compose.staging.yml down || echo ok
+        docker compose -p sl_staging -f docker-compose.staging.yml down --remove-orphans || echo ok
 
-        rem Pass IMAGE to compose via env var so ${IMAGE} is resolved
-        set IMAGE=!IMAGE!
-        docker compose -f docker-compose.staging.yml up -d --remove-orphans
+        rem --- export IMAGE so ${IMAGE} in compose gets resolved ---
+        set "IMAGE=!IMAGE!"
+        docker compose -p sl_staging -f docker-compose.staging.yml up -d --remove-orphans
         popd
       '''
 
-      // 3) Health-check the running app on port 5002
-      bat '''
-        powershell -Command "$ErrorActionPreference='Stop'; \
-          $ok=$false; for($i=0;$i -lt 60;$i++){ \
-            try{ $r=Invoke-WebRequest http://localhost:5002/health -UseBasicParsing; \
-                 if($r.StatusCode -eq 200){ $ok=$true; break } } \
-            catch { Start-Sleep -s 2 } \
-          }; if(-not $ok){ Write-Error 'Staging app did not become healthy'; exit 1 }"
-      '''
+      // Health check on the published port (matches compose file below)
+      bat """
+        powershell -NoProfile -Command ^
+          \"$ErrorActionPreference='Stop'; ^
+            \$ok=\$false; for(\$i=0;\$i -lt 60;\$i++){ ^
+              try{ ^
+                \$r=Invoke-WebRequest 'http://localhost:5002/health' -UseBasicParsing; ^
+                if(\$r.StatusCode -eq 200){ \$ok=\$true; break } ^
+              } catch { Start-Sleep -s 2 } ^
+            }; ^
+            if(-not \$ok){ Write-Error 'Staging app did not become healthy in time'; exit 1 }\"
+      """
     }
   }
   post {
@@ -189,13 +196,15 @@ stage('Deploy - Staging') {
       echo 'Staging deployed & healthy at http://localhost:5002'
     }
     failure {
-      // Helpful logs on failure
-      bat 'docker compose -f deploy\\docker-compose.staging.yml ps > reports\\deploy-ps.txt || echo ok'
-      bat 'docker compose -f deploy\\docker-compose.staging.yml logs > reports\\deploy-logs.txt || echo ok'
+      // collect diagnostics; don't fail if compose is already down
+      bat 'if not exist reports mkdir reports'
+      bat 'docker compose -p sl_staging -f deploy\\docker-compose.staging.yml ps   > reports\\deploy-ps.txt   || echo ok'
+      bat 'docker compose -p sl_staging -f deploy\\docker-compose.staging.yml logs > reports\\deploy-logs.txt || echo ok'
       archiveArtifacts artifacts: 'reports/deploy-*.txt', fingerprint: true
     }
   }
 }
+
 
     stage('Archive artefacts') {
       steps {
