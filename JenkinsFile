@@ -116,6 +116,136 @@ stage('Code Quality') {
   }
 }
 
+stage('Security') {
+  steps {
+    bat '''
+      setlocal ENABLEDELAYEDEXPANSION
+
+      rem --- Vars we already use elsewhere ---
+      for /F %%i in ('git rev-parse --short HEAD') do set COMMIT=%%i
+      set IMAGE_NAME=flask-shopping-list
+      set IMAGE_TAG=%BUILD_NUMBER%-%COMMIT%
+      set TAR=build\\%IMAGE_NAME%-%IMAGE_TAG%.tar
+
+      rem Fresh reports dir
+      if exist reports rmdir /s /q reports
+      mkdir reports
+
+      rem ==========================================
+      rem 1) SAST: Bandit (scan Python source)
+      rem ==========================================
+      docker run --rm ^
+        -e PYTHONPATH=/app ^
+        -v "%cd%\\reports":/reports ^
+        -w /app ^
+        %IMAGE_NAME%:%IMAGE_TAG% ^
+        sh -lc "pip install -q bandit && bandit -q -r app -f json -o /reports/bandit.json || true"
+
+      rem ==========================================
+      rem 2) SCA: pip-audit (scan Python dependencies)
+      rem     We don't fail immediately; we’ll decide in PowerShell
+      rem ==========================================
+      docker run --rm ^
+        -e PYTHONPATH=/app ^
+        -v "%cd%\\reports":/reports ^
+        -w /app ^
+        %IMAGE_NAME%:%IMAGE_TAG% ^
+        sh -lc "pip install -q pip-audit && pip-audit -r requirements.txt -f json -o /reports/pip-audit.json || true"
+
+      rem ==========================================
+      rem 3) Container scan: Trivy (scan the saved image TAR)
+      rem    (No Docker socket needed; we scan the tar file)
+      rem ==========================================
+      docker run --rm ^
+        -v "%cd%\\build":/work ^
+        -v "%cd%\\reports":/reports ^
+        aquasec/trivy:0.56.2 ^
+          image --input /work/%IMAGE_NAME%-%IMAGE_TAG%.tar ^
+          --format sarif --severity HIGH,CRITICAL ^
+          --output /reports/trivy.sarif ^
+          || exit /b 0
+    '''
+
+    // ---- Summarize & gate in one place (Windows PowerShell) ----
+    powershell(returnStatus: true, script: '''
+      $ErrorActionPreference = "Stop"
+
+      # Read reports if they exist; otherwise use empty objects
+      function Read-Json($p){ if(Test-Path $p){ Get-Content $p -Raw | ConvertFrom-Json } else { $null } }
+
+      $bandit = Read-Json "reports/bandit.json"
+      $audit  = Read-Json "reports/pip-audit.json"
+      $sarif  = Read-Json "reports/trivy.sarif"
+
+      # -------- Bandit summary --------
+      $banditIssues = 0
+      $banditHigh   = 0
+      if($bandit){
+        $banditIssues = ($bandit.results | Measure-Object).Count
+        $banditHigh   = ($bandit.results | Where-Object { $_.issue_severity -eq "HIGH" } | Measure-Object).Count
+        Write-Host "Bandit: $banditIssues issues ($banditHigh HIGH)"
+      } else {
+        Write-Host "Bandit: no report"
+      }
+
+      # -------- pip-audit summary --------
+      $auditIssues = 0; $auditHigh = 0
+      if($audit){
+        # pip-audit JSON schema: top-level 'dependencies' list -> each 'vulns'
+        $vulns = @()
+        foreach($d in $audit.dependencies){ if($d.vulns){ $vulns += $d.vulns } }
+        $auditIssues = $vulns.Count
+        $auditHigh   = ($vulns | Where-Object { $_.severity -match 'HIGH|CRITICAL' }).Count
+        Write-Host "pip-audit: $auditIssues vulns ($auditHigh HIGH/CRITICAL)"
+      } else {
+        Write-Host "pip-audit: no report"
+      }
+
+      # -------- Trivy summary (SARIF) --------
+      $trivyIssues = 0
+      if($sarif){
+        $trivyIssues = ($sarif.runs[0].results | Measure-Object).Count
+        Write-Host "Trivy: $trivyIssues HIGH/CRITICAL image vulns"
+      } else {
+        Write-Host "Trivy: no report"
+      }
+
+      # --- Gate logic ---
+      # Fail build if any HIGH/CRITICAL in deps or image, or HIGH in bandit
+      $fail = ($banditHigh -gt 0) -or ($auditHigh -gt 0) -or ($trivyIssues -gt 0)
+
+      # Mark UNSTABLE if there are any issues at all (but not high)
+      $unstable = (-not $fail) -and ( ($banditIssues -gt 0) -or ($auditIssues -gt 0) )
+
+      if($fail){
+        Write-Host "SECURITY GATE: FAIL (high/critical findings present)."
+        exit 2
+      } elseif($unstable){
+        Write-Host "SECURITY GATE: UNSTABLE (low/medium findings present)."
+        exit 1
+      } else {
+        Write-Host "SECURITY GATE: PASS"
+        exit 0
+      }
+    ''')
+  }
+
+  post {
+    always {
+      // Keep the evidence
+      archiveArtifacts artifacts: 'reports/**', fingerprint: true
+
+      // If you have Warnings NG plugin, this will show Trivy SARIF in Jenkins UI
+      recordIssues enabledForFailure: true, tools: [sarif(pattern: 'reports/trivy.sarif')]
+    }
+    unstable {
+      echo 'Build marked UNSTABLE due to non-critical security issues.'
+    }
+    failure {
+      echo 'Build FAILED due to high/critical security issues.'
+    }
+  }
+}
 
 
 
