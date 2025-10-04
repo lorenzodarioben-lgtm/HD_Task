@@ -100,26 +100,20 @@ stage('Test - Smoke') {
 stage('Code Quality') {
   steps {
     script {
-      def scannerHome = tool name: 'SonarScanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
+      def sonarScanner = tool name: 'SonarScanner',
+                              type: 'hudson.plugins.sonar.SonarRunnerInstallation'
       withSonarQubeEnv('HD') {
-  def scannerHome = tool name: 'SonarScanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
-  bat """
-    "${scannerHome}\\bin\\sonar-scanner.bat" ^
-      -Dsonar.projectKey=flask-shopping-list ^
-      -Dsonar.projectName="Flask Shopping List" ^
-      -Dsonar.sources=. ^
-      -Dsonar.tests=tests ^
-      -Dsonar.python.version=3.11 ^
-      -Dsonar.python.coverage.reportPaths=reports/coverage.xml ^
-      -Dsonar.projectVersion=%BUILD_NUMBER% ^
-      -Dsonar.host.url=%SONAR_HOST_URL% ^
-      -Dsonar.token=%SONAR_AUTH_TOKEN%
-  """
-}
-
+        bat """
+          "${sonarScanner}\\bin\\sonar-scanner.bat" ^
+            -Dsonar.projectVersion=%BUILD_NUMBER% ^
+            -Dsonar.host.url=%SONAR_HOST_URL% ^
+            -Dsonar.token=%SONAR_AUTH_TOKEN%
+        """
+      }
     }
   }
 }
+
 
 
 
