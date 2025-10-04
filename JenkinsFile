@@ -5,7 +5,6 @@ pipeline {
   }
 node {
   stage('Build') {
-    // Ensure Docker is visible (optional diagnostics)
     bat 'where docker'
     bat 'docker --version'
 
