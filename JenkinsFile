@@ -116,9 +116,6 @@ stage('Code Quality') {
   }
 }
 
-
-
-
     stage('Archive artefacts') {
       steps {
         archiveArtifacts artifacts: 'build/**', fingerprint: true
