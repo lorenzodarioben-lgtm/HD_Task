@@ -108,4 +108,3 @@ stage('Test - Smoke') {
       }
     }
   }
-}
