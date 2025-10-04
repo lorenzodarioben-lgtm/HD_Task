@@ -1,0 +1,27 @@
+stage('Build') {
+  environment {
+    IMAGE_NAME = 'flask-shopping-list'       // change if you prefer
+    IMAGE_TAG  = "${env.BUILD_NUMBER}-${env.GIT_COMMIT.take(7)}"
+  }
+  steps {
+    sh '''
+      set -euxo pipefail
+      mkdir -p build
+      BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+      docker build \
+        --label org.opencontainers.image.title=${IMAGE_NAME} \
+        --label org.opencontainers.image.revision=${GIT_COMMIT} \
+        --label org.opencontainers.image.created=${BUILD_DATE} \
+        -t ${IMAGE_NAME}:${IMAGE_TAG} .
+
+      # Record metadata for traceability
+      docker image inspect ${IMAGE_NAME}:${IMAGE_TAG} --format='{{json .Id}}' > build/image-id.json
+      echo "${IMAGE_NAME}:${IMAGE_TAG}" > build/image-tag.txt
+
+      # Make a portable artefact you can archive or move to another host
+      docker save ${IMAGE_NAME}:${IMAGE_TAG} -o build/${IMAGE_NAME}-${IMAGE_TAG}.tar
+    '''
+    archiveArtifacts artifacts: 'build/**', fingerprint: true
+  }
+}
