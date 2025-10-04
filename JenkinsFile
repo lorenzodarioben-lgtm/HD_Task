@@ -9,7 +9,6 @@ node {
     bat 'docker --version'
 
     def IMAGE_NAME = 'flask-shopping-list'
-    // get short commit
     bat '''
       for /f %%i in ('git rev-parse --short HEAD') do set COMMIT=%%i
       echo COMMIT=%COMMIT%
