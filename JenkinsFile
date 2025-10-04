@@ -33,7 +33,6 @@ pipeline {
         '''
       }
     }
-
 stage('Test - Unit') {
   steps {
     bat '''
@@ -46,6 +45,7 @@ stage('Test - Unit') {
       mkdir reports\\junit
 
       docker run --rm ^
+        -e CI_IN_CONTAINER=1 ^
         -e PYTHONPATH=/app ^
         -v "%cd%\\tests":/tests ^
         -v "%cd%\\reports":/tests/reports ^
@@ -61,13 +61,13 @@ stage('Test - Unit') {
   }
   post {
     always {
-      // Publish counts to Jenkins “Test Result”
-      junit 'reports/junit/pytest-unit.xml'
-      // Keep the raw reports as artifacts too
+      // while iterating, keep this tolerant so a crash doesn't cause a second failure
+      junit testResults: 'reports/junit/pytest-unit.xml', allowEmptyResults: true
       archiveArtifacts artifacts: 'reports/**', fingerprint: true
     }
   }
 }
+
 
 stage('Test - Smoke') {
   steps {
