@@ -99,19 +99,22 @@ stage('Test - Smoke') {
 }
 stage('Code Quality (SonarQube)') {
   steps {
-    // Populate SONAR_HOST_URL and SONAR_AUTH_TOKEN from Jenkins config
     withSonarQubeEnv('HD') {
       bat '''
-  rem --- set sonar.projectVersion to the Jenkins build number ---
-  powershell -NoProfile -Command ^
-    "$p = Get-Content sonar-project.properties -Raw; ^
-     if ($p -notmatch 'sonar.projectVersion') { ^
-       Add-Content sonar-project.properties ('sonar.projectVersion=' + $env:BUILD_NUMBER) ^
-     } else { ^
-       ($p -replace 'sonar\\.projectVersion=.*', ('sonar.projectVersion=' + $env:BUILD_NUMBER)) ^
-         | Set-Content sonar-project.properties ^
-     }"
-'''
+        rem --- Make SONAR_HOST_URL usable from inside the Docker container ---
+        rem     If your Jenkins config uses http://localhost:9000, rewrite to host.docker.internal
+        for /f %%s in ('powershell -NoProfile -Command ^
+          "$u=$env:SONAR_HOST_URL -replace ''localhost'',''host.docker.internal''; $u"') do set SONAR_URL=%%s
+
+        rem --- Run the official sonar-scanner CLI in Docker, mounting the workspace ---
+        docker run --rm ^
+          -e SONAR_HOST_URL=%SONAR_URL% ^
+          -e SONAR_LOGIN=%SONAR_AUTH_TOKEN% ^
+          -v "%cd%":/usr/src ^
+          sonarsource/sonar-scanner-cli:5.0 ^
+          -Dsonar.projectBaseDir=/usr/src ^
+          -Dsonar.projectVersion=%BUILD_NUMBER%
+      '''
     }
   }
 }
@@ -119,7 +122,6 @@ stage('Code Quality (SonarQube)') {
 stage('Quality Gate') {
   steps {
     timeout(time: 10, unit: 'MINUTES') {
-      // Hard gate: FAIL the pipeline if the Quality Gate fails
       waitForQualityGate abortPipeline: true
     }
   }
