@@ -34,7 +34,42 @@ pipeline {
       }
     }
 
-stage('Test') {
+stage('Test - Unit') {
+  steps {
+    bat '''
+      setlocal ENABLEDELAYEDEXPANSION
+      for /f %%i in ('git rev-parse --short HEAD') do set COMMIT=%%i
+      set IMAGE_NAME=flask-shopping-list
+      set IMAGE_TAG=%BUILD_NUMBER%-%COMMIT%
+
+      if exist reports rmdir /s /q reports
+      mkdir reports\\junit
+
+      docker run --rm ^
+        -e PYTHONPATH=/app ^
+        -v "%cd%\\tests":/tests ^
+        -v "%cd%\\reports":/tests/reports ^
+        -w /tests ^
+        %IMAGE_NAME%:%IMAGE_TAG% ^
+        sh -lc "pip install -q pytest pytest-cov && \
+                pytest -vv -rA --color=yes \
+                  --maxfail=1 --disable-warnings \
+                  --cov=app --cov-report=xml:/tests/reports/coverage.xml \
+                  --cov-fail-under=75 \
+                  --junitxml=/tests/reports/junit/pytest-unit.xml"
+    '''
+  }
+  post {
+    always {
+      // Publish counts to Jenkins “Test Result”
+      junit 'reports/junit/pytest-unit.xml'
+      // Keep the raw reports as artifacts too
+      archiveArtifacts artifacts: 'reports/**', fingerprint: true
+    }
+  }
+}
+
+stage('Test - Smoke') {
   steps {
     bat '''
       setlocal ENABLEDELAYEDEXPANSION
@@ -43,36 +78,26 @@ stage('Test') {
       set IMAGE_TAG=%BUILD_NUMBER%-%COMMIT%
       set PORT=5001
 
-      rem --- start app container for integration smoke ---
       docker rm -f sl_test 2>nul || echo ok
       docker run -d --name sl_test -p %PORT%:5000 %IMAGE_NAME%:%IMAGE_TAG%
 
-      rem --- wait for /health to be 200, else fail fast ---
       powershell -Command "$ErrorActionPreference='Stop'; \
-        $ok=$false; \
-        for($i=0;$i -lt 30;$i++){ \
-          try{ \
-            $r=Invoke-WebRequest http://localhost:%PORT%/health -UseBasicParsing; \
-            if($r.StatusCode -eq 200){ $ok=$true; break } \
-          } catch { Start-Sleep -s 2 } \
-        }; \
-        if(-not $ok){ Write-Error 'App did not become healthy in time'; exit 1 }"
-
-      rem --- smoke the login page (HTTP 200 expected) ---
-      powershell -Command "$ErrorActionPreference='Stop'; \
-        $r=Invoke-WebRequest http://localhost:%PORT%/login -UseBasicParsing; \
-        if($r.StatusCode -ne 200){ Write-Error 'Login page not OK'; exit 1 }"
-
-      rem --- cleanup ---
+        $ok=$false; for($i=0;$i -lt 30;$i++){ \
+          try{ $r=Invoke-WebRequest http://localhost:%PORT%/health -UseBasicParsing; if($r.StatusCode -eq 200){ $ok=$true; break } } \
+          catch { Start-Sleep -s 2 } \
+        }; if(-not $ok){ Write-Error 'App did not become healthy in time'; exit 1 }; \
+        $l=Invoke-WebRequest http://localhost:%PORT%/login -UseBasicParsing; \
+        if($l.StatusCode -ne 200){ Write-Error 'Login page not OK'; exit 1 }"
       docker rm -f sl_test
     '''
   }
   post {
     failure {
-      bat 'echo --- sl_test logs (if any) --- & docker logs sl_test || echo no logs & docker rm -f sl_test || exit /b 0'
+      bat 'echo --- sl_test logs --- & docker logs sl_test || echo (no container) & docker rm -f sl_test || exit /b 0'
     }
   }
 }
+
 
 
 
