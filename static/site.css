@@ -1,0 +1,5 @@
+:root{--bg:#f8fafc}
+body{background:var(--bg)}
+.card{border-radius:12px}
+.navbar-brand{letter-spacing:.2px}
+.toast-container{z-index:1080}

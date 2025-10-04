@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+  <form class="d-flex" role="search" method="get" action="{{ url_for('routes.dashboard') }}">
+    <input class="form-control me-2" type="search" placeholder="Search lists..." aria-label="Search" name="q" value="{{ q }}">
+    <button class="btn btn-outline-secondary">Search</button>
+  </form>
+
+  <form class="d-flex" method="post" action="{{ url_for('routes.create_list') }}">
+    {{ csrf_token() }}
+    <input class="form-control me-2" type="text" name="name" placeholder="New list name" required>
+    <button class="btn btn-primary">+ Create list</button>
+  </form>
+</div>
+
+{% if lists %}
+<div class="row g-3">
+  {% for l in lists %}
+  <div class="col-sm-6 col-lg-4">
+    <div class="card h-100 shadow-sm">
+      <div class="card-body d-flex flex-column">
+        <div class="d-flex align-items-start justify-content-between">
+          <h3 class="h5 card-title mb-2"><a href="{{ url_for('routes.view_list', list_id=l.id) }}" class="text-decoration-none">{{ l.name }}</a></h3>
+          <form method="post" action="{{ url_for('routes.delete_list', list_id=l.id) }}" onsubmit="return confirm('Delete this list?')">
+            {{ csrf_token() }}
+            <button class="btn btn-outline-danger btn-sm">Delete</button>
+          </form>
+        </div>
+        <p class="card-text text-muted small mt-auto">Created {{ l.created_at.strftime('%Y-%m-%d') }}</p>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-5 text-muted">
+  <p class="mb-1">No lists yet.</p>
+  <p>Create your first shopping list above.</p>
+</div>
+{% endif %}
+{% endblock %}
