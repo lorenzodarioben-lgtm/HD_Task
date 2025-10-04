@@ -99,19 +99,31 @@ stage('Test - Smoke') {
 }
 stage('Code Quality (SonarQube)') {
   steps {
-    // Uses the SonarQube server you configured in Manage Jenkins → System → SonarQube servers
-    // This injects SONAR_HOST_URL and SONAR_AUTH_TOKEN env vars for this block.
-    withSonarQubeEnv('HD') {
+    withSonarQubeEnv('HD') { // injects SONAR_HOST_URL and SONAR_AUTH_TOKEN
       bat '''
-        rem --- Make the Sonar URL reachable from inside the container ---
-        rem If Jenkins is configured with http://localhost:9000, rewrite it for Docker
-        set "SONAR_URL=%SONAR_HOST_URL:localhost=host.docker.internal%"
+        rem --- Fail fast if Jenkins didn’t provide a token ---
+        if "%SONAR_AUTH_TOKEN%"=="" (
+          echo [ERROR] SONAR_AUTH_TOKEN is empty. Check Manage Jenkins^>System^>SonarQube servers and set a valid "Server authentication token".
+          exit /b 2
+        )
 
-        rem (Optional) quick debug
+        rem --- Make URL reachable from inside the container (fix localhost) ---
+        set "SONAR_URL=%SONAR_HOST_URL:localhost=host.docker.internal%"
         echo Using Sonar URL: %SONAR_URL%
 
-        rem --- Run sonar-scanner via Docker, mounting the workspace ---
+        rem --- Validate the token from INSIDE Docker (should return {"valid":true}) ---
+        docker run --rm curlimages/curl:8.8.0 ^
+          -s -f -u %SONAR_AUTH_TOKEN%: ^
+          "%SONAR_URL%/api/authentication/validate" || (
+            echo [ERROR] Token validation failed (bad token or insufficient perms). ^
+            echo        Ensure the token owner has "Execute Analysis" (and "Create Projects" if project auto-create is needed). ^
+            exit /b 2
+          )
+        echo Token validated OK.
+
+        rem --- Run sonar-scanner in Docker (pass token both ways for robustness) ---
         docker run --rm ^
+          -e SONAR_TOKEN=%SONAR_AUTH_TOKEN% ^
           -v "%cd%":/usr/src ^
           sonarsource/sonar-scanner-cli:5.0 ^
           -Dsonar.host.url=%SONAR_URL% ^
@@ -122,6 +134,8 @@ stage('Code Quality (SonarQube)') {
     }
   }
 }
+
+
 
 stage('Quality Gate') {
   steps {
