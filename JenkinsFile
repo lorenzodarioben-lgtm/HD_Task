@@ -99,12 +99,18 @@ stage('Test - Smoke') {
 }
 stage('Code Quality (SonarQube)') {
   steps {
+    // Uses the SonarQube server you configured in Manage Jenkins → System → SonarQube servers
+    // This injects SONAR_HOST_URL and SONAR_AUTH_TOKEN env vars for this block.
     withSonarQubeEnv('HD') {
       bat '''
-        rem --- Make host URL reachable from inside the container (localhost -> host.docker.internal) ---
+        rem --- Make the Sonar URL reachable from inside the container ---
+        rem If Jenkins is configured with http://localhost:9000, rewrite it for Docker
         set "SONAR_URL=%SONAR_HOST_URL:localhost=host.docker.internal%"
 
-        rem --- Run sonar-scanner in Docker ---
+        rem (Optional) quick debug
+        echo Using Sonar URL: %SONAR_URL%
+
+        rem --- Run sonar-scanner via Docker, mounting the workspace ---
         docker run --rm ^
           -v "%cd%":/usr/src ^
           sonarsource/sonar-scanner-cli:5.0 ^
@@ -117,15 +123,15 @@ stage('Code Quality (SonarQube)') {
   }
 }
 
-
-
 stage('Quality Gate') {
   steps {
     timeout(time: 10, unit: 'MINUTES') {
+      // Fails the pipeline if the gate fails
       waitForQualityGate abortPipeline: true
     }
   }
 }
+
 
 
 
