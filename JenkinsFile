@@ -100,7 +100,7 @@ stage('Test - Smoke') {
 stage('Code Quality (SonarQube)') {
   steps {
     // Populate SONAR_HOST_URL and SONAR_AUTH_TOKEN from Jenkins config
-    withSonarQubeEnv('My SonarQube') {
+    withSonarQubeEnv('HD') {
       bat '''
         setlocal ENABLEDELAYEDEXPANSION
         rem Ensure project version is the Jenkins build number
