@@ -1,0 +1,12 @@
+.git
+build/
+reports/
+__pycache__/
+*.pyc
+*.db
+.venv/
+node_modules/
+JenkinsFile
+tests/
+.pytest_cache/
+coverage.xml
