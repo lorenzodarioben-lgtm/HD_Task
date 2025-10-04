@@ -101,12 +101,15 @@ stage('Code Quality (SonarQube)') {
   steps {
     withSonarQubeEnv('HD') {
       bat '''
-        rem --- Make SONAR_HOST_URL usable from inside the Docker container ---
-        rem     If your Jenkins config uses http://localhost:9000, rewrite to host.docker.internal
-        for /f %%s in ('powershell -NoProfile -Command ^
-          "$u=$env:SONAR_HOST_URL -replace ''localhost'',''host.docker.internal''; $u"') do set SONAR_URL=%%s
+        rem --- Prepare a container-reachable Sonar URL ---
+        rem SONAR_HOST_URL is injected by withSonarQubeEnv
+        set "SONAR_URL=%SONAR_HOST_URL:localhost=host.docker.internal%"
 
-        rem --- Run the official sonar-scanner CLI in Docker, mounting the workspace ---
+        rem (Optional) debug
+        echo SONAR_HOST_URL=%SONAR_HOST_URL%
+        echo SONAR_URL=%SONAR_URL%
+
+        rem --- Run sonar-scanner in Docker, mounting the workspace ---
         docker run --rm ^
           -e SONAR_HOST_URL=%SONAR_URL% ^
           -e SONAR_LOGIN=%SONAR_AUTH_TOKEN% ^
