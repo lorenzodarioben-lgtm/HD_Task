@@ -1,5 +1,5 @@
-{% macro render_field(field, help=None, **kwargs) -%}
-  {# determine classes #}
+{% macro render_field(field, help=None, class_name="") -%}
+  {# choose a base class by field type #}
   {% set base_class = "form-control" %}
   {% if field.type in ("BooleanField", "RadioField") %}
     {% set base_class = "form-check-input" %}
@@ -8,13 +8,13 @@
   {% endif %}
 
   {% set invalid = " is-invalid" if field.errors else "" %}
-  {% set classes = (kwargs.pop('class', '') ~ ' ' ~ base_class ~ invalid).strip() %}
+  {% set classes = (class_name ~ " " ~ base_class ~ invalid).strip() %}
   {% set describedby_id = field.id ~ "-help" %}
 
-  {# Boolean (checkbox) uses different structure #}
+  {# BooleanField uses different markup #}
   {% if field.type == "BooleanField" %}
     <div class="form-check mb-3">
-      {{ field(class=classes, aria_invalid=field.errors and 'true' or 'false', **kwargs) }}
+      {{ field(class=classes) }}
       {{ field.label(class="form-check-label", for=field.id) }}
       {% if help %}
         <div id="{{ describedby_id }}" class="form-text">{{ help }}</div>
@@ -25,16 +25,10 @@
         </div>
       {% endif %}
     </div>
-
   {% else %}
     <div class="mb-3">
       {{ field.label(class="form-label", for=field.id) }}
-      {{ field(
-          class=classes,
-          aria_invalid=field.errors and 'true' or 'false',
-          aria_describedby=help and describedby_id or None,
-          **kwargs
-      ) }}
+      {{ field(class=classes) }}
       {% if help %}
         <div id="{{ describedby_id }}" class="form-text">{{ help }}</div>
       {% endif %}
