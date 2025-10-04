@@ -100,17 +100,16 @@ stage('Test - Smoke') {
 stage('Code Quality') {
   steps {
     script {
+      // Resolve the installed scanner
       def scannerHome = tool name: 'SonarScanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
+
+      // Inject SONAR_HOST_URL and SONAR_TOKEN from the "HD" server config
       withSonarQubeEnv('HD') {
+        // Run the scanner (properties file + a few CLI overrides)
         bat """
           "${scannerHome}\\bin\\sonar-scanner.bat" ^
-            -Dsonar.projectKey=flask-shopping-list ^
-            -Dsonar.projectName="Flask Shopping List" ^
-            -Dsonar.sources=. ^
-            -Dsonar.tests=tests ^
-            -Dsonar.python.version=3.11 ^
-            -Dsonar.python.coverage.reportPaths=reports/coverage.xml ^
-            -Dsonar.projectVersion=%BUILD_NUMBER%
+            -Dsonar.projectVersion=%BUILD_NUMBER% ^
+            -Dsonar.host.url=%SONAR_HOST_URL%
         """
       }
     }
@@ -125,6 +124,7 @@ stage('Quality Gate') {
     }
   }
 }
+
 
 
 
