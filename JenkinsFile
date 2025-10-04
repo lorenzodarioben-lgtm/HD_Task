@@ -3,31 +3,34 @@ pipeline {
   environment {
     IMAGE_NAME = 'flask-shopping-list'
   }
-  stages {
-    stage('Build') {
-      steps {
-        script {
-          // Compute tag from build number + short commit
-          env.COMMIT    = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
-          env.IMAGE_TAG = "${env.BUILD_NUMBER}-${env.COMMIT}"
-        }
-        sh """
-          set -euxo pipefail
-          mkdir -p build
-          BUILD_DATE=\$(date -u +%Y-%m-%dT%H:%M:%SZ)
+node {
+  stage('Build') {
+    // Ensure Docker is visible (optional diagnostics)
+    bat 'where docker'
+    bat 'docker --version'
 
-          docker build \
-            --label org.opencontainers.image.title=${IMAGE_NAME} \
-            --label org.opencontainers.image.revision=${COMMIT} \
-            --label org.opencontainers.image.created=\$BUILD_DATE \
-            -t ${IMAGE_NAME}:${IMAGE_TAG} .
+    def IMAGE_NAME = 'flask-shopping-list'
+    // get short commit
+    bat '''
+      for /f %%i in ('git rev-parse --short HEAD') do set COMMIT=%%i
+      echo COMMIT=%COMMIT%
+      set IMAGE_TAG=%BUILD_NUMBER%-%COMMIT%
+      echo IMAGE_TAG=%IMAGE_TAG%
+      if not exist build mkdir build
 
-          docker image inspect ${IMAGE_NAME}:${IMAGE_TAG} --format='{{json .Id}}' > build/image-id.json
-          echo "${IMAGE_NAME}:${IMAGE_TAG}" > build/image-tag.txt
-          docker save ${IMAGE_NAME}:${IMAGE_TAG} -o build/${IMAGE_NAME}-${IMAGE_TAG}.tar
-        """
-        archiveArtifacts artifacts: 'build/**', fingerprint: true
-      }
-    }
+      rem Build image
+      docker build -t %IMAGE_NAME%:%IMAGE_TAG% .
+
+      rem Record metadata (avoid Go template quoting on Windows)
+      docker images --no-trunc --quiet %IMAGE_NAME%:%IMAGE_TAG% > build\\image-id.txt
+      echo %IMAGE_NAME%:%IMAGE_TAG% > build\\image-tag.txt
+
+      rem Save a portable artefact
+      docker save -o build\\%IMAGE_NAME%-%IMAGE_TAG%.tar %IMAGE_NAME%:%IMAGE_TAG%
+    '''
+    archiveArtifacts artifacts: 'build/**', fingerprint: true
+  }
+}
+
   }
 }
